@@ -6,7 +6,7 @@ from pathlib import Path
 import qrcode
 
 DB_PATH = Path("seed_inventory.db")
-LOCAL_APP_URL = "http://localhost:8501"
+APP_URL = "https://tobacco-seed-inventory.streamlit.app"
 
 st.set_page_config(page_title="Tobacco Seed Inventory Demo", layout="wide")
 
@@ -41,7 +41,7 @@ def get_record(df, accession_id):
 def generate_direct_qr(accession_id):
     qr_dir = Path("qr_codes")
     qr_dir.mkdir(exist_ok=True)
-    direct_url = f"{LOCAL_APP_URL}/?accession={accession_id}"
+    direct_url = f"{APP_URL}/?accession={accession_id}"
     qr_path = qr_dir / f"{accession_id}_direct.png"
     img = qrcode.make(direct_url)
     img.save(qr_path)
