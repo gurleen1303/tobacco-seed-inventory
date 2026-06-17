@@ -54,22 +54,19 @@ def generate_direct_qr(accession_id):
 
 def split_freezer_location(df):
     df = df.copy()
-
     extracted = df["freezer_location"].astype(str).str.extract(
         r"F(?P<Freezer>\d+)-S(?P<Shelf>\d+)-B(?P<Box>\d+)-P(?P<Packet>\d+)",
         flags=re.IGNORECASE
     )
-
     df["Freezer"] = extracted["Freezer"]
     df["Shelf"] = extracted["Shelf"]
     df["Box"] = extracted["Box"]
     df["Packet"] = extracted["Packet"]
-
     return df
 
 
 def freezer_map_tab(df):
-    st.subheader("🧊 Visual Freezer Map")
+    st.subheader("Visual Freezer Map")
 
     st.markdown("""
     Location format: **F1-S2-B3-P7**  
@@ -81,11 +78,6 @@ def freezer_map_tab(df):
 
     if valid_df.empty:
         st.warning("No valid freezer locations found. Use format like F1-S2-B3-P7.")
-        st.dataframe(
-            df[["accession_id", "line_name", "freezer_location"]],
-            use_container_width=True,
-            hide_index=True
-        )
         return
 
     freezer_options = sorted(valid_df["Freezer"].unique(), key=lambda x: int(x))
@@ -104,104 +96,28 @@ def freezer_map_tab(df):
     c3.metric("Boxes Used", freezer_df["Box"].nunique())
     c4.metric("Packets Used", freezer_df["Packet"].count())
 
-    st.markdown(
-        """
-        <style>
-        .freezer-cabinet {
-            border: 7px solid #455A64;
-            border-radius: 22px;
-            background: linear-gradient(180deg, #ECEFF1, #B0BEC5);
-            padding: 24px;
-            margin-top: 18px;
-            box-shadow: 0 8px 24px rgba(0,0,0,0.25);
-        }
-        .freezer-title {
-            text-align: center;
-            font-size: 26px;
-            font-weight: 800;
-            color: #263238;
-            margin-bottom: 20px;
-        }
-        .shelf-row {
-            border-top: 6px solid #607D8B;
-            background: #FAFAFA;
-            border-radius: 10px;
-            padding: 15px;
-            margin-bottom: 20px;
-            box-shadow: inset 0 2px 4px rgba(0,0,0,0.08);
-        }
-        .shelf-label {
-            font-weight: 800;
-            color: #37474F;
-            margin-bottom: 12px;
-            font-size: 17px;
-        }
-        .box-grid {
-            display: grid;
-            grid-template-columns: repeat(6, 1fr);
-            gap: 12px;
-        }
-        .seed-box {
-            border: 2px solid #5D4037;
-            border-radius: 8px;
-            background: linear-gradient(180deg, #D7CCC8, #A1887F);
-            color: #212121;
-            padding: 12px 6px;
-            text-align: center;
-            min-height: 72px;
-            box-shadow: inset 0 -5px 0 rgba(0,0,0,0.15), 0 3px 6px rgba(0,0,0,0.15);
-        }
-        .box-name {
-            font-weight: 800;
-            font-size: 15px;
-        }
-        .box-count {
-            font-size: 12px;
-            margin-top: 5px;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True
-    )
+    st.markdown(f"## Freezer {selected_freezer}")
 
     shelves = sorted(freezer_df["Shelf"].unique(), key=lambda x: int(x))
 
-    freezer_html = f"""
-    <div class="freezer-cabinet">
-        <div class="freezer-title">Freezer {selected_freezer}</div>
-    """
-
     for shelf in shelves:
         shelf_df = freezer_df[freezer_df["Shelf"] == shelf].copy()
+
+        st.markdown("---")
+        st.markdown(f"### Shelf {shelf}")
+
         boxes = sorted(shelf_df["Box"].unique(), key=lambda x: int(x))
+        cols = st.columns(6)
 
-        freezer_html += f"""
-        <div class="shelf-row">
-            <div class="shelf-label">Shelf {shelf}</div>
-            <div class="box-grid">
-        """
-
-        for box in boxes:
-            box_df = shelf_df[shelf_df["Box"] == box]
+        for i, box in enumerate(boxes):
+            box_df = shelf_df[shelf_df["Box"] == box].copy()
             packet_count = box_df["Packet"].count()
 
-            freezer_html += f"""
-                <div class="seed-box">
-                    <div class="box-name">Box {box}</div>
-                    <div class="box-count">{packet_count} packets</div>
-                </div>
-            """
-
-        freezer_html += """
-            </div>
-        </div>
-        """
-
-    freezer_html += "</div>"
-
-    st.markdown(freezer_html, unsafe_allow_html=True)
+            with cols[i % 6]:
+                st.info(f"Box {box}\n\n{packet_count} packets")
 
     st.divider()
+
     st.subheader("Open Box Contents")
 
     shelf_pick = st.selectbox(
@@ -242,72 +158,9 @@ def freezer_map_tab(df):
         hide_index=True
     )
 
-    accession_options = selected_box_df["accession_id"].tolist()
-
-    if accession_options:
-        selected_accession = st.selectbox(
-            "Open accession from this box",
-            accession_options,
-            key="freezer_box_accession_select"
-        )
-
-        rec = get_record(df, selected_accession)
-
-        if rec:
-            st.markdown("### Selected Accession Record")
-            c1, c2 = st.columns([2, 1])
-
-            with c1:
-                st.write(f"**Accession ID:** {rec['accession_id']}")
-                st.write(f"**Variety/Line Name:** {rec['line_name']}")
-                st.write(f"**Pedigree:** {rec['pedigree']}")
-                st.write(f"**Generation:** {rec['generation']}")
-                st.write(f"**Year Produced:** {rec['year_produced']}")
-                st.write(f"**Quantity Available:** {rec['quantity_available']}")
-                st.write(f"**Freezer Location:** {rec['freezer_location']}")
-                st.write(f"**Germination (%):** {rec['germination_percent']}")
-                st.write(f"**Last Date Tested:** {rec['last_tested']}")
-                st.write(f"**Disease Resistance:** {rec['disease_resistance']}")
-                st.write(f"**Quality Traits:** {rec['quality_traits']}")
-                st.write(f"**Notes:** {rec['notes']}")
-
-            with c2:
-                qr_path, direct_url = generate_direct_qr(rec["accession_id"])
-                st.image(str(qr_path), caption=f"Direct QR: {rec['accession_id']}", width=180)
-                st.write("**QR opens:**")
-                st.code(direct_url)
-
-    st.divider()
-    st.subheader("Complete Freezer Location Table")
-
-    freezer_table = valid_df[
-        [
-            "accession_id",
-            "line_name",
-            "generation",
-            "year_produced",
-            "quantity_available",
-            "germination_percent",
-            "freezer_location",
-            "Freezer",
-            "Shelf",
-            "Box",
-            "Packet"
-        ]
-    ].copy()
-
-    freezer_table["Freezer"] = freezer_table["Freezer"].astype(int)
-    freezer_table["Shelf"] = freezer_table["Shelf"].astype(int)
-    freezer_table["Box"] = freezer_table["Box"].astype(int)
-    freezer_table["Packet"] = freezer_table["Packet"].astype(int)
-
-    freezer_table = freezer_table.sort_values(["Freezer", "Shelf", "Box", "Packet"])
-
-    st.dataframe(freezer_table, use_container_width=True, hide_index=True)
-
 
 def germination_reminder_tab(df):
-    st.subheader("🌱 Germination Test Reminders")
+    st.subheader("Germination Test Reminders")
 
     st.write("This section identifies seed lots that may need germination retesting.")
 
