@@ -52,15 +52,15 @@ def generate_direct_qr(accession_id):
     return qr_path, direct_url
 
 
-def split_freezer_location(df):
+def split__location(df):
     df = df.copy()
 
-    extracted = df["freezer_location"].astype(str).str.extract(
-        r"F(?P<Freezer>\d+)-S(?P<Shelf>\d+)-B(?P<Box>\d+)-P(?P<Packet>\d+)",
+    extracted = df["_location"].astype(str).str.extract(
+        r"F(?P<>\d+)-S(?P<Shelf>\d+)-B(?P<Box>\d+)-P(?P<Packet>\d+)",
         flags=re.IGNORECASE
     )
 
-    df["Freezer"] = extracted["Freezer"]
+    df[""] = extracted["Freezer"]
     df["Shelf"] = extracted["Shelf"]
     df["Box"] = extracted["Box"]
     df["Packet"] = extracted["Packet"]
@@ -69,28 +69,166 @@ def split_freezer_location(df):
 
 
 def freezer_map_tab(df):
-    st.subheader("Visual Freezer Map")
+    st.subheader("🧊 Visual Freezer Map")
 
     st.markdown("""
-    Example code: **F1-S2-B3-P7**
-
-    - **F1** = Freezer 1  
-    - **S2** = Shelf 2  
-    - **B3** = Box 3  
-    - **P7** = Packet / position 7  
+    Location format: **F1-S2-B3-P7**  
+    Freezer 1 → Shelf 2 → Box 3 → Packet 7
     """)
 
     map_df = split_freezer_location(df)
-
     valid_df = map_df.dropna(subset=["Freezer", "Shelf", "Box", "Packet"]).copy()
 
     if valid_df.empty:
-        st.warning("No valid freezer locations found. Please use format like F1-S2-B3-P7.")
-        st.dataframe(
-            df[["accession_id", "line_name", "freezer_location"]],
-            use_container_width=True,
-            hide_index=True
-        )
+        st.warning("No valid freezer locations found. Use format like F1-S2-B3-P7.")
+        return
+
+    freezer_options = sorted(valid_df["Freezer"].unique(), key=lambda x: int(x))
+
+    selected_freezer = st.selectbox(
+        "Select Freezer",
+        freezer_options,
+        format_func=lambda x: f"Freezer {x}"
+    )
+
+    freezer_df = valid_df[valid_df["Freezer"] == selected_freezer].copy()
+
+    st.markdown(
+        """
+        <style>
+        .freezer-cabinet {
+            border: 6px solid #546E7A;
+            border-radius: 18px;
+            background: linear-gradient(180deg, #ECEFF1, #CFD8DC);
+            padding: 22px;
+            margin-top: 15px;
+            box-shadow: 0 6px 18px rgba(0,0,0,0.18);
+        }
+        .freezer-title {
+            text-align: center;
+            font-size: 24px;
+            font-weight: 700;
+            color: #263238;
+            margin-bottom: 18px;
+        }
+        .shelf-row {
+            border-top: 5px solid #78909C;
+            background: #FAFAFA;
+            border-radius: 8px;
+            padding: 14px;
+            margin-bottom: 18px;
+        }
+        .shelf-label {
+            font-weight: 700;
+            color: #37474F;
+            margin-bottom: 10px;
+        }
+        .box-grid {
+            display: grid;
+            grid-template-columns: repeat(6, 1fr);
+            gap: 10px;
+        }
+        .seed-box {
+            border: 2px solid #6D4C41;
+            border-radius: 8px;
+            background: linear-gradient(180deg, #D7CCC8, #A1887F);
+            color: #212121;
+            padding: 12px 6px;
+            text-align: center;
+            min-height: 70px;
+            box-shadow: inset 0 -4px 0 rgba(0,0,0,0.12);
+        }
+        .box-name {
+            font-weight: 700;
+            font-size: 15px;
+        }
+        .box-count {
+            font-size: 12px;
+            margin-top: 4px;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
+
+    shelves = sorted(freezer_df["Shelf"].unique(), key=lambda x: int(x))
+
+    freezer_html = f"""
+    <div class="freezer-cabinet">
+        <div class="freezer-title">Freezer {selected_freezer}</div>
+    """
+
+    for shelf in shelves:
+        shelf_df = freezer_df[freezer_df["Shelf"] == shelf].copy()
+        boxes = sorted(shelf_df["Box"].unique(), key=lambda x: int(x))
+
+        freezer_html += f"""
+        <div class="shelf-row">
+            <div class="shelf-label">Shelf {shelf}</div>
+            <div class="box-grid">
+        """
+
+        for box in boxes:
+            box_df = shelf_df[shelf_df["Box"] == box]
+            packet_count = box_df["Packet"].count()
+
+            freezer_html += f"""
+                <div class="seed-box">
+                    <div class="box-name">Box {box}</div>
+                    <div class="box-count">{packet_count} packets</div>
+                </div>
+            """
+
+        freezer_html += """
+            </div>
+        </div>
+        """
+
+    freezer_html += "</div>"
+
+    st.markdown(freezer_html, unsafe_allow_html=True)
+
+    st.divider()
+
+    st.subheader("Open Box Contents")
+
+    shelf_pick = st.selectbox(
+        "Select Shelf",
+        shelves,
+        format_func=lambda x: f"Shelf {x}"
+    )
+
+    shelf_df = freezer_df[freezer_df["Shelf"] == shelf_pick].copy()
+    box_options = sorted(shelf_df["Box"].unique(), key=lambda x: int(x))
+
+    box_pick = st.selectbox(
+        "Select Box",
+        box_options,
+        format_func=lambda x: f"Box {x}"
+    )
+
+    selected_box_df = shelf_df[shelf_df["Box"] == box_pick].copy()
+    selected_box_df["Packet_Number"] = selected_box_df["Packet"].astype(int)
+    selected_box_df = selected_box_df.sort_values("Packet_Number")
+
+    st.markdown(f"### Contents of F{selected_freezer}-S{shelf_pick}-B{box_pick}")
+
+    st.dataframe(
+        selected_box_df[
+            [
+                "Packet",
+                "accession_id",
+                "line_name",
+                "generation",
+                "year_produced",
+                "quantity_available",
+                "germination_percent",
+                "freezer_location"
+            ]
+        ],
+        use_container_width=True,
+        hide_index=True
+    )
         return
 
     freezer_options = sorted(valid_df["Freezer"].unique(), key=lambda x: int(x))
