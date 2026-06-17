@@ -52,15 +52,15 @@ def generate_direct_qr(accession_id):
     return qr_path, direct_url
 
 
-def split__location(df):
+def split_freezer_location(df):
     df = df.copy()
 
-    extracted = df["_location"].astype(str).str.extract(
-        r"F(?P<>\d+)-S(?P<Shelf>\d+)-B(?P<Box>\d+)-P(?P<Packet>\d+)",
+    extracted = df["freezer_location"].astype(str).str.extract(
+        r"F(?P<Freezer>\d+)-S(?P<Shelf>\d+)-B(?P<Box>\d+)-P(?P<Packet>\d+)",
         flags=re.IGNORECASE
     )
 
-    df[""] = extracted["Freezer"]
+    df["Freezer"] = extracted["Freezer"]
     df["Shelf"] = extracted["Shelf"]
     df["Box"] = extracted["Box"]
     df["Packet"] = extracted["Packet"]
@@ -81,6 +81,11 @@ def freezer_map_tab(df):
 
     if valid_df.empty:
         st.warning("No valid freezer locations found. Use format like F1-S2-B3-P7.")
+        st.dataframe(
+            df[["accession_id", "line_name", "freezer_location"]],
+            use_container_width=True,
+            hide_index=True
+        )
         return
 
     freezer_options = sorted(valid_df["Freezer"].unique(), key=lambda x: int(x))
@@ -93,58 +98,66 @@ def freezer_map_tab(df):
 
     freezer_df = valid_df[valid_df["Freezer"] == selected_freezer].copy()
 
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Accessions", freezer_df["accession_id"].nunique())
+    c2.metric("Shelves Used", freezer_df["Shelf"].nunique())
+    c3.metric("Boxes Used", freezer_df["Box"].nunique())
+    c4.metric("Packets Used", freezer_df["Packet"].count())
+
     st.markdown(
         """
         <style>
         .freezer-cabinet {
-            border: 6px solid #546E7A;
-            border-radius: 18px;
-            background: linear-gradient(180deg, #ECEFF1, #CFD8DC);
-            padding: 22px;
-            margin-top: 15px;
-            box-shadow: 0 6px 18px rgba(0,0,0,0.18);
+            border: 7px solid #455A64;
+            border-radius: 22px;
+            background: linear-gradient(180deg, #ECEFF1, #B0BEC5);
+            padding: 24px;
+            margin-top: 18px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.25);
         }
         .freezer-title {
             text-align: center;
-            font-size: 24px;
-            font-weight: 700;
+            font-size: 26px;
+            font-weight: 800;
             color: #263238;
-            margin-bottom: 18px;
+            margin-bottom: 20px;
         }
         .shelf-row {
-            border-top: 5px solid #78909C;
+            border-top: 6px solid #607D8B;
             background: #FAFAFA;
-            border-radius: 8px;
-            padding: 14px;
-            margin-bottom: 18px;
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 20px;
+            box-shadow: inset 0 2px 4px rgba(0,0,0,0.08);
         }
         .shelf-label {
-            font-weight: 700;
+            font-weight: 800;
             color: #37474F;
-            margin-bottom: 10px;
+            margin-bottom: 12px;
+            font-size: 17px;
         }
         .box-grid {
             display: grid;
             grid-template-columns: repeat(6, 1fr);
-            gap: 10px;
+            gap: 12px;
         }
         .seed-box {
-            border: 2px solid #6D4C41;
+            border: 2px solid #5D4037;
             border-radius: 8px;
             background: linear-gradient(180deg, #D7CCC8, #A1887F);
             color: #212121;
             padding: 12px 6px;
             text-align: center;
-            min-height: 70px;
-            box-shadow: inset 0 -4px 0 rgba(0,0,0,0.12);
+            min-height: 72px;
+            box-shadow: inset 0 -5px 0 rgba(0,0,0,0.15), 0 3px 6px rgba(0,0,0,0.15);
         }
         .box-name {
-            font-weight: 700;
+            font-weight: 800;
             font-size: 15px;
         }
         .box-count {
             font-size: 12px;
-            margin-top: 4px;
+            margin-top: 5px;
         }
         </style>
         """,
@@ -189,7 +202,6 @@ def freezer_map_tab(df):
     st.markdown(freezer_html, unsafe_allow_html=True)
 
     st.divider()
-
     st.subheader("Open Box Contents")
 
     shelf_pick = st.selectbox(
@@ -229,140 +241,41 @@ def freezer_map_tab(df):
         use_container_width=True,
         hide_index=True
     )
-        return
 
-    freezer_options = sorted(valid_df["Freezer"].unique(), key=lambda x: int(x))
+    accession_options = selected_box_df["accession_id"].tolist()
 
-    selected_freezer = st.selectbox(
-        "Select Freezer",
-        freezer_options,
-        format_func=lambda x: f"Freezer {x}"
-    )
-
-    freezer_df = valid_df[valid_df["Freezer"] == selected_freezer].copy()
-
-    total_accessions = freezer_df["accession_id"].nunique()
-    total_shelves = freezer_df["Shelf"].nunique()
-    total_boxes = freezer_df["Box"].nunique()
-    total_packets = freezer_df["Packet"].count()
-
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Accessions", total_accessions)
-    c2.metric("Shelves Used", total_shelves)
-    c3.metric("Boxes Used", total_boxes)
-    c4.metric("Packets Used", total_packets)
-
-    st.divider()
-
-    shelves = sorted(freezer_df["Shelf"].unique(), key=lambda x: int(x))
-
-    for shelf in shelves:
-        shelf_df = freezer_df[freezer_df["Shelf"] == shelf].copy()
-
-        with st.expander(f"Shelf {shelf} - {shelf_df['accession_id'].nunique()} accessions", expanded=True):
-            boxes = sorted(shelf_df["Box"].unique(), key=lambda x: int(x))
-
-            box_cols = st.columns(4)
-
-            for i, box in enumerate(boxes):
-                box_df = shelf_df[shelf_df["Box"] == box].copy()
-                packet_count = box_df["Packet"].count()
-
-                with box_cols[i % 4]:
-                    st.markdown(
-                        f"""
-                        <div style="
-                            border: 2px solid #2E7D32;
-                            border-radius: 12px;
-                            padding: 14px;
-                            margin-bottom: 10px;
-                            text-align: center;
-                            background-color: #F1F8E9;">
-                            <h4 style="margin:0;">Box {box}</h4>
-                            <p style="margin:4px;">{packet_count} packets</p>
-                        </div>
-                        """,
-                        unsafe_allow_html=True
-                    )
-
-                    if st.button(
-                        f"Open Box {box}",
-                        key=f"open_F{selected_freezer}_S{shelf}_B{box}"
-                    ):
-                        st.session_state.selected_box_location = {
-                            "Freezer": selected_freezer,
-                            "Shelf": shelf,
-                            "Box": box
-                        }
-
-    st.divider()
-
-    if "selected_box_location" in st.session_state:
-        loc = st.session_state.selected_box_location
-
-        selected_box_df = valid_df[
-            (valid_df["Freezer"] == loc["Freezer"]) &
-            (valid_df["Shelf"] == loc["Shelf"]) &
-            (valid_df["Box"] == loc["Box"])
-        ].copy()
-
-        selected_box_df["Packet_Number"] = selected_box_df["Packet"].astype(int)
-        selected_box_df = selected_box_df.sort_values("Packet_Number")
-
-        st.subheader(
-            f"Contents of F{loc['Freezer']}-S{loc['Shelf']}-B{loc['Box']}"
+    if accession_options:
+        selected_accession = st.selectbox(
+            "Open accession from this box",
+            accession_options,
+            key="freezer_box_accession_select"
         )
 
-        st.dataframe(
-            selected_box_df[
-                [
-                    "Packet",
-                    "accession_id",
-                    "line_name",
-                    "generation",
-                    "year_produced",
-                    "quantity_available",
-                    "germination_percent",
-                    "freezer_location"
-                ]
-            ],
-            use_container_width=True,
-            hide_index=True
-        )
+        rec = get_record(df, selected_accession)
 
-        accession_options = selected_box_df["accession_id"].tolist()
+        if rec:
+            st.markdown("### Selected Accession Record")
+            c1, c2 = st.columns([2, 1])
 
-        if accession_options:
-            selected_accession = st.selectbox(
-                "Open accession from this box",
-                accession_options,
-                key="box_accession_select"
-            )
+            with c1:
+                st.write(f"**Accession ID:** {rec['accession_id']}")
+                st.write(f"**Variety/Line Name:** {rec['line_name']}")
+                st.write(f"**Pedigree:** {rec['pedigree']}")
+                st.write(f"**Generation:** {rec['generation']}")
+                st.write(f"**Year Produced:** {rec['year_produced']}")
+                st.write(f"**Quantity Available:** {rec['quantity_available']}")
+                st.write(f"**Freezer Location:** {rec['freezer_location']}")
+                st.write(f"**Germination (%):** {rec['germination_percent']}")
+                st.write(f"**Last Date Tested:** {rec['last_tested']}")
+                st.write(f"**Disease Resistance:** {rec['disease_resistance']}")
+                st.write(f"**Quality Traits:** {rec['quality_traits']}")
+                st.write(f"**Notes:** {rec['notes']}")
 
-            rec = get_record(df, selected_accession)
-
-            if rec:
-                st.markdown("### Selected Accession Record")
-                c1, c2 = st.columns([2, 1])
-
-                with c1:
-                    st.write(f"**Accession ID:** {rec['accession_id']}")
-                    st.write(f"**Variety/Line Name:** {rec['line_name']}")
-                    st.write(f"**Pedigree:** {rec['pedigree']}")
-                    st.write(f"**Generation:** {rec['generation']}")
-                    st.write(f"**Year Produced:** {rec['year_produced']}")
-                    st.write(f"**Quantity Available:** {rec['quantity_available']}")
-                    st.write(f"**Freezer Location:** {rec['freezer_location']}")
-                    st.write(f"**Germination (%):** {rec['germination_percent']}")
-                    st.write(f"**Last Date Tested:** {rec['last_tested']}")
-                    st.write(f"**Disease Resistance:** {rec['disease_resistance']}")
-                    st.write(f"**Quality Traits:** {rec['quality_traits']}")
-                    st.write(f"**Notes:** {rec['notes']}")
-
-                with c2:
-                    qr_path, direct_url = generate_direct_qr(rec["accession_id"])
-                    st.image(str(qr_path), caption=f"Direct QR: {rec['accession_id']}", width=180)
-                    st.code(direct_url)
+            with c2:
+                qr_path, direct_url = generate_direct_qr(rec["accession_id"])
+                st.image(str(qr_path), caption=f"Direct QR: {rec['accession_id']}", width=180)
+                st.write("**QR opens:**")
+                st.code(direct_url)
 
     st.divider()
     st.subheader("Complete Freezer Location Table")
@@ -381,9 +294,141 @@ def freezer_map_tab(df):
             "Box",
             "Packet"
         ]
-    ].sort_values(["Freezer", "Shelf", "Box", "Packet"])
+    ].copy()
+
+    freezer_table["Freezer"] = freezer_table["Freezer"].astype(int)
+    freezer_table["Shelf"] = freezer_table["Shelf"].astype(int)
+    freezer_table["Box"] = freezer_table["Box"].astype(int)
+    freezer_table["Packet"] = freezer_table["Packet"].astype(int)
+
+    freezer_table = freezer_table.sort_values(["Freezer", "Shelf", "Box", "Packet"])
 
     st.dataframe(freezer_table, use_container_width=True, hide_index=True)
+
+
+def germination_reminder_tab(df):
+    st.subheader("🌱 Germination Test Reminders")
+
+    st.write("This section identifies seed lots that may need germination retesting.")
+
+    reminder_df = df.copy()
+
+    reminder_df["last_tested_date"] = pd.to_datetime(
+        reminder_df["last_tested"],
+        errors="coerce"
+    )
+
+    today = pd.Timestamp.today().normalize()
+
+    reminder_df["days_since_tested"] = (
+        today - reminder_df["last_tested_date"]
+    ).dt.days
+
+    reminder_df["germination_percent"] = pd.to_numeric(
+        reminder_df["germination_percent"],
+        errors="coerce"
+    )
+
+    retest_interval = st.number_input(
+        "Retest interval in years",
+        min_value=1,
+        max_value=10,
+        value=5
+    )
+
+    germination_threshold = st.number_input(
+        "Low germination warning threshold (%)",
+        min_value=0,
+        max_value=100,
+        value=75
+    )
+
+    max_days = retest_interval * 365
+
+    reminder_df["Reminder Status"] = "OK"
+
+    reminder_df.loc[
+        reminder_df["days_since_tested"] >= max_days,
+        "Reminder Status"
+    ] = "Retest Due"
+
+    reminder_df.loc[
+        reminder_df["germination_percent"] < germination_threshold,
+        "Reminder Status"
+    ] = "Low Germination"
+
+    reminder_df.loc[
+        reminder_df["last_tested_date"].isna(),
+        "Reminder Status"
+    ] = "Missing Test Date"
+
+    due_df = reminder_df[
+        reminder_df["Reminder Status"] != "OK"
+    ].copy()
+
+    c1, c2, c3, c4 = st.columns(4)
+
+    c1.metric("Total Accessions", len(reminder_df))
+    c2.metric("Retest Due", len(reminder_df[reminder_df["Reminder Status"] == "Retest Due"]))
+    c3.metric("Low Germination", len(reminder_df[reminder_df["Reminder Status"] == "Low Germination"]))
+    c4.metric("Missing Test Date", len(reminder_df[reminder_df["Reminder Status"] == "Missing Test Date"]))
+
+    st.divider()
+
+    st.markdown("### Accessions Requiring Attention")
+
+    if due_df.empty:
+        st.success("No germination reminders at this time.")
+    else:
+        st.dataframe(
+            due_df[
+                [
+                    "accession_id",
+                    "line_name",
+                    "generation",
+                    "year_produced",
+                    "germination_percent",
+                    "last_tested",
+                    "days_since_tested",
+                    "freezer_location",
+                    "Reminder Status"
+                ]
+            ],
+            use_container_width=True,
+            hide_index=True
+        )
+
+    st.divider()
+
+    st.markdown("### Full Germination Test Status")
+
+    status_df = reminder_df[
+        [
+            "accession_id",
+            "line_name",
+            "generation",
+            "year_produced",
+            "germination_percent",
+            "last_tested",
+            "days_since_tested",
+            "freezer_location",
+            "Reminder Status"
+        ]
+    ].copy()
+
+    status_df = status_df.sort_values(
+        by=["Reminder Status", "days_since_tested"],
+        ascending=[True, False]
+    )
+
+    st.dataframe(status_df, use_container_width=True, hide_index=True)
+
+    st.download_button(
+        "Download Germination Reminder List",
+        data=due_df.to_csv(index=False),
+        file_name="germination_reminders.csv",
+        mime="text/csv"
+    )
 
 
 df = load_data()
@@ -391,13 +436,15 @@ df = load_data()
 query_params = st.query_params
 url_accession = query_params.get("accession", None)
 
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "Search Inventory",
     "Add / Edit Record",
     "Freezer Map",
+    "Germination Reminders",
     "QR Codes",
     "Export"
 ])
+
 
 with tab1:
     st.subheader("Search seed lots")
@@ -414,13 +461,24 @@ with tab1:
     )
 
     if search:
-        mask = df.astype(str).apply(lambda col: col.str.contains(search, case=False, na=False)).any(axis=1)
+        mask = df.astype(str).apply(
+            lambda col: col.str.contains(search, case=False, na=False)
+        ).any(axis=1)
         results = df[mask].copy()
     else:
         results = df.copy()
 
     st.dataframe(
-        results[["accession_id", "line_name", "year_produced", "germination_percent", "freezer_location", "quantity_available"]],
+        results[
+            [
+                "accession_id",
+                "line_name",
+                "year_produced",
+                "germination_percent",
+                "freezer_location",
+                "quantity_available"
+            ]
+        ],
         use_container_width=True,
         hide_index=True
     )
@@ -472,6 +530,7 @@ with tab1:
     else:
         st.warning("No accession found. Try a different search term.")
 
+
 with tab2:
     st.subheader("Add or edit accession record")
 
@@ -506,15 +565,26 @@ with tab2:
 
         if st.button("Update Record"):
             save_record((
-                rec["accession_id"], line_name, pedigree, generation, int(year_produced),
-                quantity_available, freezer_location, int(germination_percent),
-                last_tested, disease_resistance, quality_traits, notes, photo_path
+                rec["accession_id"],
+                line_name,
+                pedigree,
+                generation,
+                int(year_produced),
+                quantity_available,
+                freezer_location,
+                int(germination_percent),
+                last_tested,
+                disease_resistance,
+                quality_traits,
+                notes,
+                photo_path
             ))
             st.success("Record updated successfully.")
             st.rerun()
 
     else:
         st.info("Use this form to create a completely new accession.")
+
         accession_id = st.text_input("New Accession ID", value="CTRF-2026-006")
         line_name = st.text_input("Variety or Line Name")
         pedigree = st.text_area("Pedigree Information")
@@ -534,18 +604,34 @@ with tab2:
                 st.error("This Accession ID already exists. Use Edit existing record instead.")
             else:
                 save_record((
-                    accession_id, line_name, pedigree, generation, int(year_produced),
-                    quantity_available, freezer_location, int(germination_percent),
-                    last_tested, disease_resistance, quality_traits, notes, photo_path
+                    accession_id,
+                    line_name,
+                    pedigree,
+                    generation,
+                    int(year_produced),
+                    quantity_available,
+                    freezer_location,
+                    int(germination_percent),
+                    last_tested,
+                    disease_resistance,
+                    quality_traits,
+                    notes,
+                    photo_path
                 ))
                 generate_direct_qr(accession_id)
                 st.success("New record added successfully.")
                 st.rerun()
 
+
 with tab3:
     freezer_map_tab(df)
 
+
 with tab4:
+    germination_reminder_tab(df)
+
+
+with tab5:
     st.subheader("Direct QR codes")
     st.write("These QR codes open the selected accession directly when the app is running.")
 
@@ -561,7 +647,8 @@ with tab4:
         st.write("Print this QR on paper for demo purposes.")
         st.write("For long-term use, replace localhost with a server/cloud URL.")
 
-with tab5:
+
+with tab6:
     st.subheader("Export inventory")
     st.download_button(
         "Download CSV backup",
