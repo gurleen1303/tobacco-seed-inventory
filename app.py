@@ -350,13 +350,32 @@ def import_seed_inventory_tab():
     try:
         if file_name.endswith(".csv"):
             import_df = pd.read_csv(uploaded_file)
+
         elif file_name.endswith(".txt") or file_name.endswith(".tsv"):
             import_df = pd.read_csv(uploaded_file, sep=None, engine="python")
-        elif file_name.endswith(".xlsx") or file_name.endswith(".xls"):
-            import_df = pd.read_excel(uploaded_file)
+
+        elif file_name.endswith(".xlsx"):
+            try:
+                import_df = pd.read_excel(uploaded_file, engine="openpyxl")
+            except Exception:
+                st.error(
+                    "Could not read Excel .xlsx file. Add openpyxl to requirements.txt, "
+                    "or save the file as CSV and upload again."
+                )
+                st.code("openpyxl")
+                return
+
+        elif file_name.endswith(".xls"):
+            st.error(
+                "Old .xls files are not supported reliably on Streamlit Cloud. "
+                "Please open the file in Excel and save it as .xlsx or CSV."
+            )
+            return
+
         else:
             st.error("Unsupported file type. Please upload CSV, TXT, TSV, XLSX, or XLS.")
             return
+
     except Exception as e:
         st.error(f"Could not read file: {e}")
         return
