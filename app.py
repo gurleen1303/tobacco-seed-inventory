@@ -1,9 +1,9 @@
-
 import sqlite3
 import pandas as pd
 import streamlit as st
 from pathlib import Path
 import qrcode
+import re
 
 DB_PATH = Path("seed_inventory.db")
 APP_URL = "https://tobacco-seed-inventory.streamlit.app"
@@ -13,11 +13,13 @@ st.set_page_config(page_title="Tobacco Seed Inventory Demo", layout="wide")
 st.title("Tobacco Seed Inventory System - Demo")
 st.caption("Seed inventory, freezer location tracking, germination status, and direct QR accession workflow.")
 
+
 def load_data():
     conn = sqlite3.connect(DB_PATH)
     df = pd.read_sql_query("SELECT * FROM accessions", conn)
     conn.close()
     return df
+
 
 def save_record(record):
     conn = sqlite3.connect(DB_PATH)
@@ -32,11 +34,13 @@ def save_record(record):
     conn.commit()
     conn.close()
 
+
 def get_record(df, accession_id):
     subset = df[df["accession_id"] == accession_id]
     if len(subset) == 0:
         return None
     return subset.iloc[0].to_dict()
+
 
 def generate_direct_qr(accession_id):
     qr_dir = Path("qr_codes")
@@ -47,9 +51,205 @@ def generate_direct_qr(accession_id):
     img.save(qr_path)
     return qr_path, direct_url
 
+
+def split_freezer_location(df):
+    df = df.copy()
+
+    extracted = df["freezer_location"].astype(str).str.extract(
+        r"F(?P<Freezer>\d+)-S(?P<Shelf>\d+)-B(?P<Box>\d+)-P(?P<Packet>\d+)",
+        flags=re.IGNORECASE
+    )
+
+    df["Freezer"] = extracted["Freezer"]
+    df["Shelf"] = extracted["Shelf"]
+    df["Box"] = extracted["Box"]
+    df["Packet"] = extracted["Packet"]
+
+    return df
+
+
+def freezer_map_tab(df):
+    st.subheader("Visual Freezer Map")
+
+    st.markdown("""
+    Example code: **F1-S2-B3-P7**
+
+    - **F1** = Freezer 1  
+    - **S2** = Shelf 2  
+    - **B3** = Box 3  
+    - **P7** = Packet / position 7  
+    """)
+
+    map_df = split_freezer_location(df)
+
+    valid_df = map_df.dropna(subset=["Freezer", "Shelf", "Box", "Packet"]).copy()
+
+    if valid_df.empty:
+        st.warning("No valid freezer locations found. Please use format like F1-S2-B3-P7.")
+        st.dataframe(
+            df[["accession_id", "line_name", "freezer_location"]],
+            use_container_width=True,
+            hide_index=True
+        )
+        return
+
+    freezer_options = sorted(valid_df["Freezer"].unique(), key=lambda x: int(x))
+
+    selected_freezer = st.selectbox(
+        "Select Freezer",
+        freezer_options,
+        format_func=lambda x: f"Freezer {x}"
+    )
+
+    freezer_df = valid_df[valid_df["Freezer"] == selected_freezer].copy()
+
+    total_accessions = freezer_df["accession_id"].nunique()
+    total_shelves = freezer_df["Shelf"].nunique()
+    total_boxes = freezer_df["Box"].nunique()
+    total_packets = freezer_df["Packet"].count()
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Accessions", total_accessions)
+    c2.metric("Shelves Used", total_shelves)
+    c3.metric("Boxes Used", total_boxes)
+    c4.metric("Packets Used", total_packets)
+
+    st.divider()
+
+    shelves = sorted(freezer_df["Shelf"].unique(), key=lambda x: int(x))
+
+    for shelf in shelves:
+        shelf_df = freezer_df[freezer_df["Shelf"] == shelf].copy()
+
+        with st.expander(f"Shelf {shelf} - {shelf_df['accession_id'].nunique()} accessions", expanded=True):
+            boxes = sorted(shelf_df["Box"].unique(), key=lambda x: int(x))
+
+            box_cols = st.columns(4)
+
+            for i, box in enumerate(boxes):
+                box_df = shelf_df[shelf_df["Box"] == box].copy()
+                packet_count = box_df["Packet"].count()
+
+                with box_cols[i % 4]:
+                    st.markdown(
+                        f"""
+                        <div style="
+                            border: 2px solid #2E7D32;
+                            border-radius: 12px;
+                            padding: 14px;
+                            margin-bottom: 10px;
+                            text-align: center;
+                            background-color: #F1F8E9;">
+                            <h4 style="margin:0;">Box {box}</h4>
+                            <p style="margin:4px;">{packet_count} packets</p>
+                        </div>
+                        """,
+                        unsafe_allow_html=True
+                    )
+
+                    if st.button(
+                        f"Open Box {box}",
+                        key=f"open_F{selected_freezer}_S{shelf}_B{box}"
+                    ):
+                        st.session_state.selected_box_location = {
+                            "Freezer": selected_freezer,
+                            "Shelf": shelf,
+                            "Box": box
+                        }
+
+    st.divider()
+
+    if "selected_box_location" in st.session_state:
+        loc = st.session_state.selected_box_location
+
+        selected_box_df = valid_df[
+            (valid_df["Freezer"] == loc["Freezer"]) &
+            (valid_df["Shelf"] == loc["Shelf"]) &
+            (valid_df["Box"] == loc["Box"])
+        ].copy()
+
+        selected_box_df["Packet_Number"] = selected_box_df["Packet"].astype(int)
+        selected_box_df = selected_box_df.sort_values("Packet_Number")
+
+        st.subheader(
+            f"Contents of F{loc['Freezer']}-S{loc['Shelf']}-B{loc['Box']}"
+        )
+
+        st.dataframe(
+            selected_box_df[
+                [
+                    "Packet",
+                    "accession_id",
+                    "line_name",
+                    "generation",
+                    "year_produced",
+                    "quantity_available",
+                    "germination_percent",
+                    "freezer_location"
+                ]
+            ],
+            use_container_width=True,
+            hide_index=True
+        )
+
+        accession_options = selected_box_df["accession_id"].tolist()
+
+        if accession_options:
+            selected_accession = st.selectbox(
+                "Open accession from this box",
+                accession_options,
+                key="box_accession_select"
+            )
+
+            rec = get_record(df, selected_accession)
+
+            if rec:
+                st.markdown("### Selected Accession Record")
+                c1, c2 = st.columns([2, 1])
+
+                with c1:
+                    st.write(f"**Accession ID:** {rec['accession_id']}")
+                    st.write(f"**Variety/Line Name:** {rec['line_name']}")
+                    st.write(f"**Pedigree:** {rec['pedigree']}")
+                    st.write(f"**Generation:** {rec['generation']}")
+                    st.write(f"**Year Produced:** {rec['year_produced']}")
+                    st.write(f"**Quantity Available:** {rec['quantity_available']}")
+                    st.write(f"**Freezer Location:** {rec['freezer_location']}")
+                    st.write(f"**Germination (%):** {rec['germination_percent']}")
+                    st.write(f"**Last Date Tested:** {rec['last_tested']}")
+                    st.write(f"**Disease Resistance:** {rec['disease_resistance']}")
+                    st.write(f"**Quality Traits:** {rec['quality_traits']}")
+                    st.write(f"**Notes:** {rec['notes']}")
+
+                with c2:
+                    qr_path, direct_url = generate_direct_qr(rec["accession_id"])
+                    st.image(str(qr_path), caption=f"Direct QR: {rec['accession_id']}", width=180)
+                    st.code(direct_url)
+
+    st.divider()
+    st.subheader("Complete Freezer Location Table")
+
+    freezer_table = valid_df[
+        [
+            "accession_id",
+            "line_name",
+            "generation",
+            "year_produced",
+            "quantity_available",
+            "germination_percent",
+            "freezer_location",
+            "Freezer",
+            "Shelf",
+            "Box",
+            "Packet"
+        ]
+    ].sort_values(["Freezer", "Shelf", "Box", "Packet"])
+
+    st.dataframe(freezer_table, use_container_width=True, hide_index=True)
+
+
 df = load_data()
 
-# Read accession from URL, e.g. http://localhost:8501/?accession=CTRF-1990-001
 query_params = st.query_params
 url_accession = query_params.get("accession", None)
 
@@ -90,7 +290,6 @@ with tab1:
     accession_options = results["accession_id"].tolist()
 
     if accession_options:
-        # If QR/link accession exists in filtered results, select it
         if url_accession in accession_options:
             default_selection = url_accession
         elif "view_accession" in st.session_state and st.session_state.view_accession in accession_options:
@@ -206,18 +405,7 @@ with tab2:
                 st.rerun()
 
 with tab3:
-    st.subheader("Freezer location coding")
-    st.markdown("""
-    Example code: **F1-S2-B3-P7**
-
-    - **F1** = Freezer 1  
-    - **S2** = Shelf 2  
-    - **B3** = Box 3  
-    - **P7** = Position 7  
-    """)
-
-    freezer_df = df[["accession_id", "line_name", "freezer_location"]].sort_values("freezer_location")
-    st.dataframe(freezer_df, use_container_width=True, hide_index=True)
+    freezer_map_tab(df)
 
 with tab4:
     st.subheader("Direct QR codes")
