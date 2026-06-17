@@ -11,7 +11,7 @@ APP_URL = "https://tobacco-seed-inventory.streamlit.app"
 st.set_page_config(page_title="Tobacco Seed Inventory Demo", layout="wide")
 
 st.title("Tobacco Seed Inventory System - Demo")
-st.caption("Seed inventory, freezer location tracking, germination status, QR accession workflow, and germination reminders.")
+st.caption("Seed inventory, freezer tracking, germination reminders, QR workflow, and import/export tools.")
 
 
 def load_data():
@@ -90,7 +90,6 @@ def dashboard_tab(df):
     st.divider()
 
     st.markdown("### Germination Summary")
-
     c1, c2, c3 = st.columns(3)
     c1.metric("Retest Due", retest_due)
     c2.metric("Low Germination", low_germination)
@@ -99,7 +98,6 @@ def dashboard_tab(df):
     st.divider()
 
     st.markdown("### Inventory Overview")
-
     st.dataframe(
         df[
             [
@@ -335,17 +333,142 @@ def germination_reminder_tab(df):
     )
 
 
+def import_seed_inventory_tab():
+    st.subheader("Import Seed Inventory List")
+
+    uploaded_file = st.file_uploader(
+        "Upload seed inventory file",
+        type=["csv", "txt", "tsv", "xlsx", "xls"]
+    )
+
+    if uploaded_file is None:
+        st.info("Upload CSV, Excel, TXT, or TSV file exported from Access or Excel.")
+        return
+
+    file_name = uploaded_file.name.lower()
+
+    try:
+        if file_name.endswith(".csv"):
+            import_df = pd.read_csv(uploaded_file)
+        elif file_name.endswith(".txt") or file_name.endswith(".tsv"):
+            import_df = pd.read_csv(uploaded_file, sep=None, engine="python")
+        elif file_name.endswith(".xlsx") or file_name.endswith(".xls"):
+            import_df = pd.read_excel(uploaded_file)
+        else:
+            st.error("Unsupported file type. Please upload CSV, TXT, TSV, XLSX, or XLS.")
+            return
+    except Exception as e:
+        st.error(f"Could not read file: {e}")
+        return
+
+    st.success(f"File loaded successfully: {uploaded_file.name}")
+    st.write("Preview of uploaded file")
+    st.dataframe(import_df.head(20), use_container_width=True)
+
+    st.markdown("### Column Mapping")
+
+    columns = import_df.columns.tolist()
+
+    accession_col = st.selectbox(
+        "Accession / Seed Code column",
+        columns,
+        index=columns.index("Seed Code") if "Seed Code" in columns else 0
+    )
+
+    line_col = st.selectbox(
+        "Variety or Strain column",
+        columns,
+        index=columns.index("Variety or Strain") if "Variety or Strain" in columns else 0
+    )
+
+    gen_col = st.selectbox(
+        "Generation column",
+        columns,
+        index=columns.index("Gen") if "Gen" in columns else 0
+    )
+
+    pedigree_col = st.selectbox(
+        "Source Parents / Pedigree column",
+        columns,
+        index=columns.index("Source Parents") if "Source Parents" in columns else 0
+    )
+
+    notes_cols = st.multiselect(
+        "Columns to combine into Notes",
+        columns,
+        default=[col for col in ["Serial No", "Seed List No", "Source", "Remark"] if col in columns]
+    )
+
+    if st.button("Import Seed Inventory"):
+        conn = sqlite3.connect(DB_PATH)
+        cur = conn.cursor()
+
+        imported = 0
+        skipped = 0
+
+        for _, row in import_df.iterrows():
+            accession_id = str(row.get(accession_col, "")).strip()
+
+            if accession_id == "" or accession_id.lower() == "nan":
+                skipped += 1
+                continue
+
+            line_name = str(row.get(line_col, "")).strip()
+            generation = str(row.get(gen_col, "")).strip()
+            pedigree = str(row.get(pedigree_col, "")).strip()
+
+            notes_parts = []
+            for col in notes_cols:
+                value = row.get(col, "")
+                if pd.notna(value) and str(value).strip() != "":
+                    notes_parts.append(f"{col}: {value}")
+
+            notes = " | ".join(notes_parts)
+
+            cur.execute("""
+                INSERT OR REPLACE INTO accessions (
+                    accession_id, line_name, pedigree, generation, year_produced,
+                    quantity_available, freezer_location, germination_percent,
+                    last_tested, disease_resistance, quality_traits, notes, photo_path
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                accession_id,
+                line_name,
+                pedigree,
+                generation,
+                0,
+                "",
+                "",
+                0,
+                "",
+                "",
+                "",
+                notes,
+                ""
+            ))
+
+            imported += 1
+
+        conn.commit()
+        conn.close()
+
+        st.success(f"Imported {imported:,} records successfully.")
+        st.warning(f"Skipped {skipped:,} rows with blank accession/seed code.")
+        st.info("Refresh the app to see the updated inventory.")
+
+
 df = load_data()
 
 query_params = st.query_params
 url_accession = query_params.get("accession", None)
 
-tab0, tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+tab0, tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
     "Dashboard",
     "Search Inventory",
     "Add / Edit Record",
     "Freezer Map",
     "Germination Reminders",
+    "Import Seed Inventory",
     "QR Codes",
     "Export"
 ])
@@ -541,6 +664,10 @@ with tab4:
 
 
 with tab5:
+    import_seed_inventory_tab()
+
+
+with tab6:
     st.subheader("Direct QR codes")
     st.write("These QR codes open the selected accession directly when the app is running.")
 
@@ -557,7 +684,7 @@ with tab5:
         st.write("For long-term use, replace localhost with a server/cloud URL.")
 
 
-with tab6:
+with tab7:
     st.subheader("Export inventory")
     st.download_button(
         "Download CSV backup",
