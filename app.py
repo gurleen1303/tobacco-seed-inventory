@@ -11,7 +11,7 @@ APP_URL = "https://tobacco-seed-inventory.streamlit.app"
 st.set_page_config(page_title="Tobacco Seed Inventory Demo", layout="wide")
 
 st.title("Tobacco Seed Inventory System - Demo")
-st.caption("Seed inventory, freezer location tracking, germination status, and direct QR accession workflow.")
+st.caption("Seed inventory, freezer location tracking, germination status, QR accession workflow, and germination reminders.")
 
 
 def load_data():
@@ -63,6 +63,58 @@ def split_freezer_location(df):
     df["Box"] = extracted["Box"]
     df["Packet"] = extracted["Packet"]
     return df
+
+
+def dashboard_tab(df):
+    st.subheader("Dashboard")
+
+    germ = pd.to_numeric(df["germination_percent"], errors="coerce")
+
+    reminder_df = df.copy()
+    reminder_df["last_tested_date"] = pd.to_datetime(reminder_df["last_tested"], errors="coerce")
+    reminder_df["days_since_tested"] = (
+        pd.Timestamp.today().normalize() - reminder_df["last_tested_date"]
+    ).dt.days
+    reminder_df["germination_percent"] = pd.to_numeric(reminder_df["germination_percent"], errors="coerce")
+
+    retest_due = len(reminder_df[reminder_df["days_since_tested"] >= 5 * 365])
+    low_germination = len(reminder_df[reminder_df["germination_percent"] < 75])
+    missing_test_date = len(reminder_df[reminder_df["last_tested_date"].isna()])
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Total Accessions", len(df))
+    c2.metric("Freezer Locations", df["freezer_location"].nunique())
+    c3.metric("Average Germination", f"{germ.mean():.1f}%")
+    c4.metric("Needs Attention", retest_due + low_germination + missing_test_date)
+
+    st.divider()
+
+    st.markdown("### Germination Summary")
+
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Retest Due", retest_due)
+    c2.metric("Low Germination", low_germination)
+    c3.metric("Missing Test Date", missing_test_date)
+
+    st.divider()
+
+    st.markdown("### Inventory Overview")
+
+    st.dataframe(
+        df[
+            [
+                "accession_id",
+                "line_name",
+                "generation",
+                "year_produced",
+                "germination_percent",
+                "last_tested",
+                "freezer_location"
+            ]
+        ],
+        use_container_width=True,
+        hide_index=True
+    )
 
 
 def freezer_map_tab(df):
@@ -220,7 +272,6 @@ def germination_reminder_tab(df):
     ].copy()
 
     c1, c2, c3, c4 = st.columns(4)
-
     c1.metric("Total Accessions", len(reminder_df))
     c2.metric("Retest Due", len(reminder_df[reminder_df["Reminder Status"] == "Retest Due"]))
     c3.metric("Low Germination", len(reminder_df[reminder_df["Reminder Status"] == "Low Germination"]))
@@ -289,7 +340,8 @@ df = load_data()
 query_params = st.query_params
 url_accession = query_params.get("accession", None)
 
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+tab0, tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+    "Dashboard",
     "Search Inventory",
     "Add / Edit Record",
     "Freezer Map",
@@ -297,6 +349,10 @@ tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "QR Codes",
     "Export"
 ])
+
+
+with tab0:
+    dashboard_tab(df)
 
 
 with tab1:
