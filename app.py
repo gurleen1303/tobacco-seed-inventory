@@ -708,6 +708,40 @@ df = load_data()
 query_params = st.query_params
 lookup_value = query_params.get("lookup", None)
 if lookup_value:
+    qr_rec = get_record_by_serial_or_accession(df, lookup_value)
+
+    if qr_rec:
+        st.success(f"Opened QR record: {qr_rec['serial_number']} | {qr_rec['accession_id']}")
+
+        st.markdown("### Packet Information")
+        st.write(f"Serial No: {qr_rec['serial_number']}")
+        st.write(f"Accession: {qr_rec['accession_id']}")
+        st.write(f"Parent Accession: {qr_rec['parent_accession']}")
+        st.write(f"Pedigree: {qr_rec['pedigree']}")
+        st.write(f"Generation: {qr_rec['generation']}")
+        st.write(f"Nursery Type: {qr_rec['nursery_type']}")
+        st.write(f"Year: {qr_rec['trial_year']}")
+        st.write(f"Freezer Location: {qr_rec['freezer_location']}")
+
+        st.markdown("### Breeding Lineage")
+
+        qr_lineage_df = build_lineage(df, qr_rec["accession_id"])
+
+        for i, row in qr_lineage_df.iterrows():
+            serial = row["Serial No"] if str(row["Serial No"]).strip() else "No serial"
+            st.write(
+                f"{serial} | {row['Accession']} | {row['Generation']} | "
+                f"{row['Nursery Type']} | {row['Year']}"
+            )
+
+            if i < len(qr_lineage_df) - 1:
+                st.write("↓")
+
+        st.divider()
+
+    else:
+        st.error(f"No record found for QR lookup: {lookup_value}")
+if lookup_value:
     rec = get_record_by_serial_or_accession(df, lookup_value)
 
     if rec:
