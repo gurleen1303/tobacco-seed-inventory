@@ -11,7 +11,7 @@ APP_URL = "https://tobacco-seed-inventory.streamlit.app"
 st.set_page_config(page_title="Tobacco Seed Inventory Demo", layout="wide")
 
 st.title("Tobacco Seed Inventory System - Demo")
-st.caption("Seed inventory, freezer tracking, germination reminders, QR workflow, import/export, and breeding lineage traceability.")
+st.caption("Seed inventory, freezer tracking, germination reminders, QR workflow, and breeding lineage traceability.")
 
 
 def init_db():
@@ -21,13 +21,9 @@ def init_db():
     cur.execute("""
         CREATE TABLE IF NOT EXISTS accessions (
             accession_id TEXT PRIMARY KEY,
-            serial_number TEXT,
             line_name TEXT,
-            parent_accession TEXT,
             pedigree TEXT,
             generation TEXT,
-            nursery_type TEXT,
-            trial_year INTEGER,
             year_produced INTEGER,
             quantity_available TEXT,
             freezer_location TEXT,
@@ -41,31 +37,162 @@ def init_db():
     """)
 
     conn.commit()
+    conn.close()
 
-    existing = pd.read_sql_query("SELECT accession_id FROM accessions", conn)
+
+def upgrade_db_schema():
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+
+    cur.execute("PRAGMA table_info(accessions)")
+    existing_columns = [row[1] for row in cur.fetchall()]
+
+    required_columns = {
+        "serial_number": "TEXT",
+        "parent_accession": "TEXT",
+        "nursery_type": "TEXT",
+        "trial_year": "INTEGER"
+    }
+
+    for col, col_type in required_columns.items():
+        if col not in existing_columns:
+            cur.execute(f"ALTER TABLE accessions ADD COLUMN {col} {col_type}")
+
+    conn.commit()
+    conn.close()
+
+
+def insert_demo_lineage_if_missing():
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
 
     demo_records = [
-        ("22-23GRM1", "", "", "", "C176TM/21D5 BLK", "F2", "Original Population", 2023, 2023, "", "", 0, "", "", "", "Original source population", ""),
-        ("24RC1", "61685", "", "22-23GRM1", "C176TM/21D5 BLK", "F2", "F2 Population", 2024, 2024, "1.0 g", "F1-S1-B1-P1", 88, "2025-05-21", "", "", "2024 seed used", ""),
-        ("25SB1", "62157", "", "24RC1", "C176TM/21D5 BLK", "F3", "F3 Population", 2025, 2025, "1.0 g", "F1-S1-B1-P2", 86, "2025-05-21", "", "", "2025 seed used", ""),
-        ("25SB1-1", "62451", "", "25SB1", "C176TM/21D5 BLK", "F3", "Selected Plant", 2025, 2025, "0.8 g", "F1-S1-B1-P3", 84, "2025-05-21", "", "", "Selected from 25SB1", ""),
-        ("26T1", "62606", "25SB1-1", "25SB1-1", "C176TM/21D5 BLK", "F4", "Head Row", 2026, 2026, "0.6 g", "F1-S1-B1-P4", 90, "2026-05-21", "", "", "2026 seed used", ""),
-        ("26T2", "62607", "25SB1-2", "25SB1-2", "C176TM/21D5 BLK", "F4", "Head Row", 2026, 2026, "0.6 g", "F1-S1-B1-P5", 91, "2026-05-21", "", "", "2026 seed used", ""),
-        ("26T3", "62608", "25SB1-5", "25SB1-5", "C176TM/21D5 BLK", "F4", "Head Row", 2026, 2026, "0.6 g", "F1-S1-B2-P1", 89, "2026-05-21", "", "", "2026 seed used", ""),
-        ("26T4", "62609", "25SB1-7", "25SB1-7", "C176TM/21D5 BLK", "F4", "Head Row", 2026, 2026, "0.6 g", "F1-S1-B2-P2", 87, "2026-05-21", "", "", "2026 seed used", "")
+        {
+            "accession_id": "22-23GRM1",
+            "serial_number": "",
+            "line_name": "",
+            "parent_accession": "",
+            "pedigree": "C176TM/21D5 BLK",
+            "generation": "F2",
+            "nursery_type": "Original Population",
+            "trial_year": 2023,
+            "year_produced": 2023,
+            "quantity_available": "",
+            "freezer_location": "",
+            "germination_percent": 0,
+            "last_tested": "",
+            "disease_resistance": "",
+            "quality_traits": "",
+            "notes": "Original source population",
+            "photo_path": ""
+        },
+        {
+            "accession_id": "24RC1",
+            "serial_number": "61685",
+            "line_name": "",
+            "parent_accession": "22-23GRM1",
+            "pedigree": "C176TM/21D5 BLK",
+            "generation": "F2",
+            "nursery_type": "F2 Population",
+            "trial_year": 2024,
+            "year_produced": 2024,
+            "quantity_available": "1.0 g",
+            "freezer_location": "F1-S1-B1-P1",
+            "germination_percent": 88,
+            "last_tested": "2025-05-21",
+            "disease_resistance": "",
+            "quality_traits": "",
+            "notes": "2024 seed used",
+            "photo_path": ""
+        },
+        {
+            "accession_id": "25SB1",
+            "serial_number": "62157",
+            "line_name": "",
+            "parent_accession": "24RC1",
+            "pedigree": "C176TM/21D5 BLK",
+            "generation": "F3",
+            "nursery_type": "F3 Population",
+            "trial_year": 2025,
+            "year_produced": 2025,
+            "quantity_available": "1.0 g",
+            "freezer_location": "F1-S1-B1-P2",
+            "germination_percent": 86,
+            "last_tested": "2025-05-21",
+            "disease_resistance": "",
+            "quality_traits": "",
+            "notes": "2025 seed used",
+            "photo_path": ""
+        },
+        {
+            "accession_id": "25SB1-1",
+            "serial_number": "62451",
+            "line_name": "",
+            "parent_accession": "25SB1",
+            "pedigree": "C176TM/21D5 BLK",
+            "generation": "F3",
+            "nursery_type": "Selected Plant",
+            "trial_year": 2025,
+            "year_produced": 2025,
+            "quantity_available": "0.8 g",
+            "freezer_location": "F1-S1-B1-P3",
+            "germination_percent": 84,
+            "last_tested": "2025-05-21",
+            "disease_resistance": "",
+            "quality_traits": "",
+            "notes": "Selected from 25SB1",
+            "photo_path": ""
+        },
+        {
+            "accession_id": "26T1",
+            "serial_number": "62606",
+            "line_name": "25SB1-1",
+            "parent_accession": "25SB1-1",
+            "pedigree": "C176TM/21D5 BLK",
+            "generation": "F4",
+            "nursery_type": "Head Row",
+            "trial_year": 2026,
+            "year_produced": 2026,
+            "quantity_available": "0.6 g",
+            "freezer_location": "F1-S1-B1-P4",
+            "germination_percent": 90,
+            "last_tested": "2026-05-21",
+            "disease_resistance": "",
+            "quality_traits": "",
+            "notes": "2026 seed used",
+            "photo_path": ""
+        }
     ]
 
-    if existing.empty:
-        cur.executemany("""
-            INSERT OR REPLACE INTO accessions (
-                accession_id, serial_number, line_name, parent_accession, pedigree,
-                generation, nursery_type, trial_year, year_produced,
+    for rec in demo_records:
+        cur.execute("""
+            INSERT OR IGNORE INTO accessions (
+                accession_id, line_name, pedigree, generation, year_produced,
                 quantity_available, freezer_location, germination_percent,
-                last_tested, disease_resistance, quality_traits, notes, photo_path
+                last_tested, disease_resistance, quality_traits, notes, photo_path,
+                serial_number, parent_accession, nursery_type, trial_year
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, demo_records)
-        conn.commit()
+        """, (
+            rec["accession_id"],
+            rec["line_name"],
+            rec["pedigree"],
+            rec["generation"],
+            rec["year_produced"],
+            rec["quantity_available"],
+            rec["freezer_location"],
+            rec["germination_percent"],
+            rec["last_tested"],
+            rec["disease_resistance"],
+            rec["quality_traits"],
+            rec["notes"],
+            rec["photo_path"],
+            rec["serial_number"],
+            rec["parent_accession"],
+            rec["nursery_type"],
+            rec["trial_year"]
+        ))
 
+    conn.commit()
     conn.close()
 
 
@@ -73,26 +200,41 @@ def load_data():
     conn = sqlite3.connect(DB_PATH)
     df = pd.read_sql_query("SELECT * FROM accessions", conn)
     conn.close()
+
+    required_cols = [
+        "serial_number", "accession_id", "line_name", "parent_accession",
+        "pedigree", "generation", "nursery_type", "trial_year",
+        "year_produced", "quantity_available", "freezer_location",
+        "germination_percent", "last_tested", "disease_resistance",
+        "quality_traits", "notes", "photo_path"
+    ]
+
+    for col in required_cols:
+        if col not in df.columns:
+            df[col] = ""
+
     return df
 
 
 def save_record(record):
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
+
     cur.execute("""
         INSERT OR REPLACE INTO accessions (
-            accession_id, serial_number, line_name, parent_accession, pedigree,
-            generation, nursery_type, trial_year, year_produced,
+            accession_id, line_name, pedigree, generation, year_produced,
             quantity_available, freezer_location, germination_percent,
-            last_tested, disease_resistance, quality_traits, notes, photo_path
+            last_tested, disease_resistance, quality_traits, notes, photo_path,
+            serial_number, parent_accession, nursery_type, trial_year
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, record)
+
     conn.commit()
     conn.close()
 
 
 def get_record(df, accession_id):
-    subset = df[df["accession_id"] == accession_id]
+    subset = df[df["accession_id"].astype(str) == str(accession_id)]
     if len(subset) == 0:
         return None
     return subset.iloc[0].to_dict()
@@ -113,7 +255,7 @@ def generate_direct_qr(serial_number, accession_id):
     qr_dir = Path("qr_codes")
     qr_dir.mkdir(exist_ok=True)
 
-    qr_value = serial_number if str(serial_number).strip() else accession_id
+    qr_value = str(serial_number).strip() if str(serial_number).strip() else accession_id
     direct_url = f"{APP_URL}/?lookup={qr_value}"
 
     qr_path = qr_dir / f"{qr_value}_direct.png"
@@ -138,13 +280,14 @@ def split_freezer_location(df):
 
 def build_lineage(df, accession_id):
     lineage = []
-    current = accession_id
+    current = str(accession_id).strip()
     visited = set()
 
     while current and current not in visited:
         visited.add(current)
 
-        row = df[df["accession_id"].astype(str) == str(current)]
+        row = df[df["accession_id"].astype(str) == current]
+
         if row.empty:
             lineage.append({
                 "Serial No": "",
@@ -168,6 +311,7 @@ def build_lineage(df, accession_id):
         })
 
         parent = rec.get("parent_accession", "")
+
         if pd.isna(parent) or str(parent).strip() == "":
             break
 
@@ -201,23 +345,14 @@ def dashboard_tab(df):
     st.divider()
 
     st.markdown("### Inventory Overview")
-    st.dataframe(
-        df[
-            [
-                "serial_number",
-                "accession_id",
-                "parent_accession",
-                "pedigree",
-                "generation",
-                "nursery_type",
-                "trial_year",
-                "germination_percent",
-                "freezer_location"
-            ]
-        ],
-        use_container_width=True,
-        hide_index=True
-    )
+
+    cols = [
+        "serial_number", "accession_id", "parent_accession",
+        "pedigree", "generation", "nursery_type", "trial_year",
+        "germination_percent", "freezer_location"
+    ]
+
+    st.dataframe(df[cols], use_container_width=True, hide_index=True)
 
 
 def search_inventory_tab(df, lookup_value=None):
@@ -242,23 +377,13 @@ def search_inventory_tab(df, lookup_value=None):
     else:
         results = df.copy()
 
-    st.dataframe(
-        results[
-            [
-                "serial_number",
-                "accession_id",
-                "parent_accession",
-                "pedigree",
-                "generation",
-                "nursery_type",
-                "trial_year",
-                "germination_percent",
-                "freezer_location"
-            ]
-        ],
-        use_container_width=True,
-        hide_index=True
-    )
+    display_cols = [
+        "serial_number", "accession_id", "parent_accession",
+        "pedigree", "generation", "nursery_type", "trial_year",
+        "germination_percent", "freezer_location"
+    ]
+
+    st.dataframe(results[display_cols], use_container_width=True, hide_index=True)
 
     accession_options = results["accession_id"].tolist()
 
@@ -299,7 +424,6 @@ def search_inventory_tab(df, lookup_value=None):
         st.markdown("### Breeding Lineage")
         lineage_df = build_lineage(df, rec["accession_id"])
         st.dataframe(lineage_df, use_container_width=True, hide_index=True)
-
     else:
         st.warning("No accession found. Try a different search term.")
 
@@ -311,7 +435,6 @@ def add_edit_tab(df):
 
     if mode == "Edit existing record":
         accession_list = df["accession_id"].tolist()
-
         selected_edit = st.selectbox("Select accession to edit", accession_list)
         rec = get_record(df, selected_edit)
 
@@ -322,11 +445,16 @@ def add_edit_tab(df):
         pedigree = st.text_area("Pedigree", value=str(rec["pedigree"]))
         generation = st.text_input("Generation", value=str(rec["generation"]))
         nursery_type = st.text_input("Nursery Type", value=str(rec["nursery_type"]))
-        trial_year = st.number_input("Year", min_value=1900, max_value=2100, value=int(rec["trial_year"]) if pd.notna(rec["trial_year"]) else 2026)
-        year_produced = st.number_input("Seed Production Year", min_value=0, max_value=2100, value=int(rec["year_produced"]) if pd.notna(rec["year_produced"]) else 0)
+
+        trial_year_value = 2026 if pd.isna(rec["trial_year"]) or str(rec["trial_year"]) == "" else int(float(rec["trial_year"]))
+        year_produced_value = 0 if pd.isna(rec["year_produced"]) or str(rec["year_produced"]) == "" else int(float(rec["year_produced"]))
+        germination_value = 0 if pd.isna(rec["germination_percent"]) or str(rec["germination_percent"]) == "" else int(float(rec["germination_percent"]))
+
+        trial_year = st.number_input("Year", min_value=1900, max_value=2100, value=trial_year_value)
+        year_produced = st.number_input("Seed Production Year", min_value=0, max_value=2100, value=year_produced_value)
         quantity_available = st.text_input("Quantity Available", value=str(rec["quantity_available"]))
         freezer_location = st.text_input("Freezer Location", value=str(rec["freezer_location"]))
-        germination_percent = st.number_input("Germination (%)", min_value=0, max_value=100, value=int(rec["germination_percent"]))
+        germination_percent = st.number_input("Germination (%)", min_value=0, max_value=100, value=germination_value)
         last_tested = st.text_input("Last Date Tested", value=str(rec["last_tested"]))
         disease_resistance = st.text_input("Disease Resistance", value=str(rec["disease_resistance"]))
         quality_traits = st.text_input("Quality Traits", value=str(rec["quality_traits"]))
@@ -335,10 +463,23 @@ def add_edit_tab(df):
 
         if st.button("Update Record"):
             save_record((
-                rec["accession_id"], serial_number, line_name, parent_accession, pedigree,
-                generation, nursery_type, int(trial_year), int(year_produced),
-                quantity_available, freezer_location, int(germination_percent),
-                last_tested, disease_resistance, quality_traits, notes, photo_path
+                rec["accession_id"],
+                line_name,
+                pedigree,
+                generation,
+                int(year_produced),
+                quantity_available,
+                freezer_location,
+                int(germination_percent),
+                last_tested,
+                disease_resistance,
+                quality_traits,
+                notes,
+                photo_path,
+                serial_number,
+                parent_accession,
+                nursery_type,
+                int(trial_year)
             ))
             st.success("Record updated successfully.")
             st.rerun()
@@ -364,10 +505,23 @@ def add_edit_tab(df):
 
         if st.button("Add New Record"):
             save_record((
-                accession_id, serial_number, line_name, parent_accession, pedigree,
-                generation, nursery_type, int(trial_year), int(year_produced),
-                quantity_available, freezer_location, int(germination_percent),
-                last_tested, disease_resistance, quality_traits, notes, photo_path
+                accession_id,
+                line_name,
+                pedigree,
+                generation,
+                int(year_produced),
+                quantity_available,
+                freezer_location,
+                int(germination_percent),
+                last_tested,
+                disease_resistance,
+                quality_traits,
+                notes,
+                photo_path,
+                serial_number,
+                parent_accession,
+                nursery_type,
+                int(trial_year)
             ))
             generate_direct_qr(serial_number, accession_id)
             st.success("New record added successfully.")
@@ -377,20 +531,15 @@ def add_edit_tab(df):
 def lineage_tab(df, lookup_value=None):
     st.subheader("Breeding Lineage / Traceability")
 
-    default_index = 0
     options = df["accession_id"].tolist()
+    default_index = 0
 
     if lookup_value:
         rec = get_record_by_serial_or_accession(df, lookup_value)
         if rec and rec["accession_id"] in options:
             default_index = options.index(rec["accession_id"])
 
-    accession = st.selectbox(
-        "Select accession",
-        options,
-        index=default_index
-    )
-
+    accession = st.selectbox("Select accession", options, index=default_index)
     rec = get_record(df, accession)
 
     st.markdown("### Packet Information")
@@ -403,18 +552,13 @@ def lineage_tab(df, lookup_value=None):
     st.write(f"Year: {rec['trial_year']}")
 
     st.divider()
-
     st.markdown("### Breeding Lineage")
+
     lineage_df = build_lineage(df, accession)
 
     for i, row in lineage_df.iterrows():
         serial = row["Serial No"] if str(row["Serial No"]).strip() else "No serial"
-        accession_value = row["Accession"]
-        generation = row["Generation"]
-        nursery = row["Nursery Type"]
-        year = row["Year"]
-
-        st.write(f"{serial} | {accession_value} | {generation} | {nursery} | {year}")
+        st.write(f"{serial} | {row['Accession']} | {row['Generation']} | {row['Nursery Type']} | {row['Year']}")
 
         if i < len(lineage_df) - 1:
             st.write("↓")
@@ -464,6 +608,7 @@ def freezer_map_tab(df):
         for i, box in enumerate(boxes):
             box_df = shelf_df[shelf_df["Box"] == box].copy()
             packet_count = box_df["Packet"].count()
+
             with cols[i % 6]:
                 st.info(f"Box {box}\n\n{packet_count} packets")
 
@@ -480,16 +625,12 @@ def freezer_map_tab(df):
     selected_box_df["Packet_Number"] = selected_box_df["Packet"].astype(int)
     selected_box_df = selected_box_df.sort_values("Packet_Number")
 
-    st.dataframe(
-        selected_box_df[
-            [
-                "Packet", "serial_number", "accession_id", "parent_accession",
-                "pedigree", "generation", "nursery_type", "freezer_location"
-            ]
-        ],
-        use_container_width=True,
-        hide_index=True
-    )
+    box_cols = [
+        "Packet", "serial_number", "accession_id", "parent_accession",
+        "pedigree", "generation", "nursery_type", "freezer_location"
+    ]
+
+    st.dataframe(selected_box_df[box_cols], use_container_width=True, hide_index=True)
 
 
 def germination_reminder_tab(df):
@@ -506,6 +647,7 @@ def germination_reminder_tab(df):
     germination_threshold = st.number_input("Low germination warning threshold (%)", min_value=0, max_value=100, value=75)
 
     max_days = retest_interval * 365
+
     reminder_df["Reminder Status"] = "OK"
     reminder_df.loc[reminder_df["days_since_tested"] >= max_days, "Reminder Status"] = "Retest Due"
     reminder_df.loc[reminder_df["germination_percent"] < germination_threshold, "Reminder Status"] = "Low Germination"
@@ -537,8 +679,10 @@ def qr_tab(df):
     qr_path, direct_url = generate_direct_qr(rec["serial_number"], rec["accession_id"])
 
     c1, c2 = st.columns([1, 2])
+
     with c1:
         st.image(str(qr_path), caption=f"{rec['serial_number']} | {rec['accession_id']}", width=220)
+
     with c2:
         st.write("Direct accession URL:")
         st.code(direct_url)
@@ -557,6 +701,8 @@ def export_tab(df):
 
 
 init_db()
+upgrade_db_schema()
+insert_demo_lineage_if_missing()
 df = load_data()
 
 query_params = st.query_params
