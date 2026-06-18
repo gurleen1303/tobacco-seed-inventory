@@ -707,6 +707,29 @@ df = load_data()
 
 query_params = st.query_params
 lookup_value = query_params.get("lookup", None)
+if lookup_value:
+    rec = get_record_by_serial_or_accession(df, lookup_value)
+
+    if rec:
+        st.success(f"Opened QR record: {rec['serial_number']} | {rec['accession_id']}")
+
+        st.markdown("### Packet Information")
+        st.write(f"Serial No: {rec['serial_number']}")
+        st.write(f"Accession: {rec['accession_id']}")
+        st.write(f"Parent Accession: {rec['parent_accession']}")
+        st.write(f"Pedigree: {rec['pedigree']}")
+        st.write(f"Generation: {rec['generation']}")
+        st.write(f"Nursery Type: {rec['nursery_type']}")
+        st.write(f"Year: {rec['trial_year']}")
+        st.write(f"Freezer Location: {rec['freezer_location']}")
+
+        st.markdown("### Breeding Lineage")
+        lineage_df = build_lineage(df, rec["accession_id"])
+        st.dataframe(lineage_df, use_container_width=True, hide_index=True)
+
+        st.divider()
+    else:
+        st.error(f"No record found for QR lookup: {lookup_value}")
 
 tab0, tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
     "Dashboard",
