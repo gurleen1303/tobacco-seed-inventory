@@ -1,3 +1,5 @@
 streamlit
 pandas
-qrcode[pil]
+qrcode
+pillow
+reportlab
