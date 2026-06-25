@@ -4,6 +4,13 @@ import streamlit as st
 from pathlib import Path
 import qrcode
 import re
+import tempfile
+import os
+
+from reportlab.lib.pagesizes import letter
+from reportlab.pdfgen import canvas
+from reportlab.lib.units import inch
+
 
 DB_PATH = Path("seed_inventory.db")
 APP_URL = "https://tobacco-seed-inventory.streamlit.app"
@@ -11,7 +18,7 @@ APP_URL = "https://tobacco-seed-inventory.streamlit.app"
 st.set_page_config(page_title="Tobacco Seed Inventory Demo", layout="wide")
 
 st.title("Tobacco Seed Inventory System - Demo")
-st.caption("Seed inventory, freezer tracking, germination reminders, QR workflow, and breeding lineage traceability.")
+st.caption("Seed inventory, freezer tracking, germination reminders, QR workflow, label printing, and breeding lineage traceability.")
 
 
 def init_db():
@@ -263,6 +270,80 @@ def generate_direct_qr(serial_number, accession_id):
     img.save(qr_path)
 
     return qr_path, direct_url
+
+
+def generate_avery_94216_labels(selected_df, copies=1, packet_type="Working"):
+    pdf_path = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf").name
+
+    c = canvas.Canvas(pdf_path, pagesize=letter)
+    page_w, page_h = letter
+
+    label_w = 2.25 * inch
+    label_h = 0.75 * inch
+
+    cols = 3
+    rows = 10
+    labels_per_page = 30
+
+    left_margin = 0.625 * inch
+    top_margin = 0.5 * inch
+    col_gap = 0.125 * inch
+    row_gap = 0.25 * inch
+
+    label_items = []
+
+    for _, row in selected_df.iterrows():
+        for _ in range(copies):
+            label_items.append(row)
+
+    for i, row in enumerate(label_items):
+        pos = i % labels_per_page
+
+        if pos == 0 and i != 0:
+            c.showPage()
+
+        col = pos % cols
+        row_num = pos // cols
+
+        x = left_margin + col * (label_w + col_gap)
+        y = page_h - top_margin - (row_num + 1) * label_h - row_num * row_gap
+
+        serial = str(row.get("serial_number", "")).strip()
+        accession = str(row.get("accession_id", "")).strip()
+        line_name = str(row.get("line_name", "")).strip()
+        generation = str(row.get("generation", "")).strip()
+        year = str(row.get("trial_year", "")).strip()
+        location = str(row.get("freezer_location", "")).strip()
+        quantity = str(row.get("quantity_available", "")).strip()
+
+        lookup_value = serial if serial else accession
+        qr_url = f"{APP_URL}/?lookup={lookup_value}"
+
+        qr_img = qrcode.make(qr_url)
+        qr_path = tempfile.NamedTemporaryFile(delete=False, suffix=".png").name
+        qr_img.save(qr_path)
+
+        c.drawImage(
+            qr_path,
+            x + label_w - 0.58 * inch,
+            y + 0.10 * inch,
+            width=0.50 * inch,
+            height=0.50 * inch
+        )
+
+        c.setFont("Helvetica-Bold", 6.5)
+        c.drawString(x + 0.05 * inch, y + 0.56 * inch, f"{serial} | {accession}")
+
+        c.setFont("Helvetica", 5.3)
+        c.drawString(x + 0.05 * inch, y + 0.43 * inch, f"{line_name[:24]}")
+        c.drawString(x + 0.05 * inch, y + 0.30 * inch, f"{generation} | {year} | {quantity}")
+        c.drawString(x + 0.05 * inch, y + 0.18 * inch, f"{packet_type}")
+        c.drawString(x + 0.05 * inch, y + 0.06 * inch, f"{location}")
+
+        os.remove(qr_path)
+
+    c.save()
+    return pdf_path
 
 
 def split_freezer_location(df):
@@ -689,6 +770,88 @@ def qr_tab(df):
         st.write("QR lookup uses serial number when available.")
 
 
+def label_printing_tab(df):
+    st.subheader("Avery 94216 Label Printing")
+
+    st.write("Create waterproof seed packet labels directly from the seed inventory database.")
+
+    st.info("Use Avery 94216 labels: 0.75 inch × 2.25 inch. Print PDF at 100% / Actual Size.")
+
+    search_text = st.text_input(
+        "Search accession, serial number, line name, pedigree, generation, or freezer location",
+        key="label_search"
+    )
+
+    label_df = df.copy()
+
+    if search_text:
+        label_df = label_df[
+            label_df.astype(str).apply(
+                lambda row: row.str.contains(search_text, case=False, na=False).any(),
+                axis=1
+            )
+        ]
+
+    display_cols = [
+        "serial_number", "accession_id", "line_name", "generation",
+        "trial_year", "quantity_available", "freezer_location"
+    ]
+
+    st.dataframe(label_df[display_cols], use_container_width=True, hide_index=True)
+
+    label_options = (
+        label_df["serial_number"].astype(str)
+        + " | "
+        + label_df["accession_id"].astype(str)
+        + " | "
+        + label_df["freezer_location"].astype(str)
+    ).tolist()
+
+    selected_labels = st.multiselect(
+        "Select records to print labels",
+        label_options
+    )
+
+    copies = st.number_input(
+        "Number of labels per selected record",
+        min_value=1,
+        max_value=10,
+        value=3
+    )
+
+    packet_type = st.selectbox(
+        "Packet type printed on label",
+        ["Working", "CTRF Backup", "McLachlan Backup", "Active Seed Room", "Long-term Freezer"]
+    )
+
+    if st.button("Generate Avery 94216 Label PDF"):
+        if not selected_labels:
+            st.warning("Please select at least one record.")
+            return
+
+        selected_accession_ids = [item.split(" | ")[1] for item in selected_labels]
+
+        selected_df = label_df[
+            label_df["accession_id"].astype(str).isin(selected_accession_ids)
+        ].copy()
+
+        pdf_path = generate_avery_94216_labels(
+            selected_df=selected_df,
+            copies=int(copies),
+            packet_type=packet_type
+        )
+
+        with open(pdf_path, "rb") as f:
+            st.download_button(
+                label="Download Label PDF",
+                data=f,
+                file_name="avery_94216_seed_labels.pdf",
+                mime="application/pdf"
+            )
+
+        st.success("Label PDF generated successfully. Print using 100% / Actual Size.")
+
+
 def export_tab(df):
     st.subheader("Export Inventory")
 
@@ -707,40 +870,7 @@ df = load_data()
 
 query_params = st.query_params
 lookup_value = query_params.get("lookup", None)
-if lookup_value:
-    qr_rec = get_record_by_serial_or_accession(df, lookup_value)
 
-    if qr_rec:
-        st.success(f"Opened QR record: {qr_rec['serial_number']} | {qr_rec['accession_id']}")
-
-        st.markdown("### Packet Information")
-        st.write(f"Serial No: {qr_rec['serial_number']}")
-        st.write(f"Accession: {qr_rec['accession_id']}")
-        st.write(f"Parent Accession: {qr_rec['parent_accession']}")
-        st.write(f"Pedigree: {qr_rec['pedigree']}")
-        st.write(f"Generation: {qr_rec['generation']}")
-        st.write(f"Nursery Type: {qr_rec['nursery_type']}")
-        st.write(f"Year: {qr_rec['trial_year']}")
-        st.write(f"Freezer Location: {qr_rec['freezer_location']}")
-
-        st.markdown("### Breeding Lineage")
-
-        qr_lineage_df = build_lineage(df, qr_rec["accession_id"])
-
-        for i, row in qr_lineage_df.iterrows():
-            serial = row["Serial No"] if str(row["Serial No"]).strip() else "No serial"
-            st.write(
-                f"{serial} | {row['Accession']} | {row['Generation']} | "
-                f"{row['Nursery Type']} | {row['Year']}"
-            )
-
-            if i < len(qr_lineage_df) - 1:
-                st.write("↓")
-
-        st.divider()
-
-    else:
-        st.error(f"No record found for QR lookup: {lookup_value}")
 if lookup_value:
     rec = get_record_by_serial_or_accession(df, lookup_value)
 
@@ -765,7 +895,8 @@ if lookup_value:
     else:
         st.error(f"No record found for QR lookup: {lookup_value}")
 
-tab0, tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+
+tab0, tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
     "Dashboard",
     "Search Inventory",
     "Add / Edit Record",
@@ -773,6 +904,7 @@ tab0, tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
     "Freezer Map",
     "Germination Reminders",
     "QR Codes",
+    "Label Printing",
     "Export"
 ])
 
@@ -798,4 +930,7 @@ with tab6:
     qr_tab(df)
 
 with tab7:
+    label_printing_tab(df)
+
+with tab8:
     export_tab(df)
